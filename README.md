@@ -1,59 +1,424 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+Pastikan konfigurasi database di file `.env` sudah mengarah ke MySQL:
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+```env
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=crud_produk
+DB_USERNAME=root
+DB_PASSWORD=
+```
 
-## About Laravel
+Lalu jalankan migrasi awal dan server lokal:
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+```bash
+php artisan migrate --seed
+php artisan serve
+```
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+---
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## To-Do 1: Upgrade ID ke UUID, Auto-Generate SKU, & Soft Deletes
 
-## Learning Laravel
+### Insight Industri
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+- **UUID (`char(36)`):** Menggantikan _auto-increment integer_ (`1, 2, 3`) untuk mencegah celah keamanan **IDOR** (_Insecure Direct Object Reference_), di mana pengguna dapat menebak ID data lain lewat URL.
+- **Auto-Generate SKU:** Menggunakan _Model Event_ (`creating`) agar kode produk dibuat otomatis di level Model (_Skinny Controller, Fat Model_).
+- **Soft Deletes:** Data yang dihapus tidak langsung hilang permanen dari MySQL, melainkan ditandai dengan _timestamp_ pada kolom `deleted_at` untuk kebutuhan audit.
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+### Langkah Live Coding
 
-## Laravel Sponsors
+#### 1. Ubah struktur tabel di `database/migrations/xxxx_xx_xx_create_products_table.php`
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+Ganti `$table->id()` dengan `uuid`, tambahkan kolom `sku`, dan aktifkan `softDeletes()`:
 
-### Premium Partners
+```php
+<?php
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
 
-## Contributing
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('products', function (Blueprint $table) {
+            $table->uuid('id')->primary();       // Primary Key menggunakan UUID (36 karakter)
+            $table->string('sku')->unique();     // Kode produk unik (otomatis diisi Model)
+            $table->string('name');
+            $table->unsignedInteger('price');
+            $table->unsignedInteger('stock')->default(0);
+            $table->softDeletes();               // Menambah kolom deleted_at
+            $table->timestamps();
+        });
+    }
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+    public function down(): void
+    {
+        Schema::dropIfExists('products');
+    }
+};
+```
 
-## Code of Conduct
+#### 2. Pasang Trait & Auto-Generate SKU di `app/Models/Product.php`
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+```php
+<?php
 
-## Security Vulnerabilities
+namespace App\Models;
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Str;
 
-## License
+class Product extends Model
+{
+    use HasFactory, HasUuids, SoftDeletes;
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+    protected $fillable = ['sku', 'name', 'price', 'stock'];
+
+    // Otomatis mengisi kode SKU sesaat sebelum data baru disimpan ke MySQL
+    protected static function booted(): void
+    {
+        static::creating(function (Product $product) {
+            if (empty($product->sku)) {
+                $product->sku = 'PRD-' . date('Y') . '-' . Str::upper(Str::random(5));
+            }
+        });
+    }
+}
+```
+
+#### 3. Sesuaikan kolom tabel di `resources/views/products/index.blade.php`
+
+Ubah header tabel (`<thead>`) dan isi baris (`<tbody>`) untuk menampilkan **Kode SKU** dan **UUID**:
+
+```html
+<thead class="table-dark">
+    <tr>
+        <th>Kode SKU</th>
+        <th>UUID</th>
+        <th>Nama Produk</th>
+        <th>Harga</th>
+        <th>Stok</th>
+        <th class="text-center" style="width: 150px;">Aksi</th>
+    </tr>
+</thead>
+<tbody>
+    @foreach ($products as $product)
+    <tr>
+        <td><span class="badge bg-secondary">{{ $product->sku }}</span></td>
+        <td><code>{{ $product->id }}</code></td>
+        <td class="fw-semibold">{{ $product->name }}</td>
+        <td>Rp {{ number_format($product->price, 0, ',', '.') }}</td>
+        <td>{{ $product->stock }} pcs</td>
+        <td class="text-center">
+            <button type="button" class="btn btn-sm btn-warning">Edit</button>
+            <button type="button" class="btn btn-sm btn-danger">Hapus</button>
+        </td>
+    </tr>
+    @endforeach
+</tbody>
+```
+
+#### 4. Reset database dan isi ulang data dummy via Terminal
+
+```bash
+php artisan migrate:fresh --seed
+```
+
+> _Refresh browser—20 data produk kini otomatis memiliki UUID dan kode SKU._
+
+---
+
+## To-Do 2: Upgrade Tabel Polos ke DataTables & Alert ke SweetAlert2
+
+### Insight Industri
+
+- **DataTables:** Memberikan fitur _live search_, _sorting_ kolom, dan _pagination_ secara instan di sisi klien tanpa perlu menulis _query_ pencarian manual.
+- **SweetAlert2:** Menggantikan kotak dialog bawaan browser/alert statis menjadi _popup_ modern yang lebih responsif.
+
+### Langkah Live Coding (`resources/views/products/index.blade.php`)
+
+#### 1. Tambahkan CSS DataTables di dalam tag `<head>`
+
+```html
+<link
+    href="https://cdn.datatables.net/2.1.8/css/dataTables.bootstrap5.min.css"
+    rel="stylesheet"
+/>
+```
+
+#### 2. Hapus blok alert Bootstrap lama
+
+```html
+<!-- Hapus bagian ini -->
+@if (session('success'))
+<div class="alert alert-success">{{ session('success') }}</div>
+@endif
+```
+
+#### 3. Tambahkan CDN jQuery, DataTables, dan SweetAlert2 sebelum penutup `</body>`
+
+```html
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/2.1.8/js/dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/2.1.8/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<script>
+    $(document).ready(function () {
+        $('#productTable').DataTable();
+    });
+
+    @if (session('success'))
+        Swal.fire({
+            icon: 'success',
+            title: 'Berhasil!',
+            text: @json(session('success')),
+            timer: 2500,
+            showConfirmButton: false
+        });
+    @endif
+</script>
+```
+
+---
+
+## To-Do 3: Hidupkan Tombol EDIT (Fitur Update + `@method('PUT')`)
+
+### Insight Industri
+
+- **Resource Routing & Implicit Route Model Binding:** Laravel otomatis mencocokkan parameter UUID pada URL (`/products/{product}/edit`) dengan data di MySQL tanpa perlu menulis `Product::findOrFail($id)`.
+- **HTTP Method Spoofing:** Tag `<form>` HTML standar hanya mendukung metode `GET` dan `POST`, sehingga Laravel menggunakan `@method('PUT')` untuk memetakan permintaan pembaruan data (_Update_).
+
+### Langkah Live Coding
+
+#### 1. Ubah `routes/web.php` menggunakan `Route::resource`
+
+```php
+<?php
+
+use App\Http\Controllers\ProductController;
+use Illuminate\Support\Facades\Route;
+
+Route::get('/', fn () => redirect()->route('products.index'));
+
+Route::resource('products', ProductController::class)->except(['create', 'show']);
+```
+
+#### 2. Tambahkan method `edit` dan `update` di `app/Http/Controllers/ProductController.php`
+
+```php
+public function edit(Product $product)
+{
+    return view('products.edit', compact('product'));
+}
+
+public function update(Request $request, Product $product)
+{
+    $validated = $request->validate([
+        'name'  => 'required|string|min:3|max:255',
+        'price' => 'required|integer|min:0',
+        'stock' => 'required|integer|min:0',
+    ]);
+
+    $product->update($validated);
+
+    return redirect()->route('products.index')
+        ->with('success', "Produk {$product->sku} berhasil diperbarui!");
+}
+```
+
+#### 3. Buat file baru `resources/views/products/edit.blade.php`
+
+```html
+<!DOCTYPE html>
+<html lang="id">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Edit Produk - {{ $product->sku }}</title>
+        <link
+            href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+            rel="stylesheet"
+        />
+    </head>
+    <body class="bg-light">
+        <div class="container py-5">
+            <div class="row justify-content-center">
+                <div class="col-md-6">
+                    <div class="card shadow-sm border-0">
+                        <div class="card-header bg-warning fw-bold">
+                            Edit Produk: {{ $product->sku }}
+                        </div>
+                        <div class="card-body">
+                            <form
+                                action="{{ route('products.update', $product->id) }}"
+                                method="POST"
+                            >
+                                @csrf @method('PUT')
+
+                                <div class="mb-3">
+                                    <label class="form-label text-muted small"
+                                        >UUID Produk</label
+                                    >
+                                    <input
+                                        type="text"
+                                        class="form-control bg-light"
+                                        value="{{ $product->id }}"
+                                        readonly
+                                    />
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label"
+                                        >Nama Produk</label
+                                    >
+                                    <input
+                                        type="text"
+                                        name="name"
+                                        class="form-control"
+                                        value="{{ old('name', $product->name) }}"
+                                        required
+                                    />
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Harga (Rp)</label>
+                                    <input
+                                        type="number"
+                                        name="price"
+                                        class="form-control"
+                                        min="0"
+                                        value="{{ old('price', $product->price) }}"
+                                        required
+                                    />
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Stok</label>
+                                    <input
+                                        type="number"
+                                        name="stock"
+                                        class="form-control"
+                                        min="0"
+                                        value="{{ old('stock', $product->stock) }}"
+                                        required
+                                    />
+                                </div>
+
+                                <div class="d-flex justify-content-between">
+                                    <a
+                                        href="{{ route('products.index') }}"
+                                        class="btn btn-secondary"
+                                        >Kembali</a
+                                    >
+                                    <button
+                                        type="submit"
+                                        class="btn btn-primary"
+                                    >
+                                        Simpan Perubahan
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </body>
+</html>
+```
+
+#### 4. Aktifkan link tombol Edit di `resources/views/products/index.blade.php`
+
+```html
+<a
+    href="{{ route('products.edit', $product->id) }}"
+    class="btn btn-sm btn-warning"
+    >Edit</a
+>
+```
+
+---
+
+## To-Do 4: Hidupkan Tombol HAPUS (Fitur Delete + SweetAlert2 Konfirmasi)
+
+### Insight Industri
+
+- **Mencegah Accidental Delete:** Menggunakan tombol `type="button"` agar form tidak langsung terkirim sebelum pengguna mengonfirmasi lewat modal SweetAlert2.
+- **Event Delegation (`$(document).on`):** Wajib digunakan saat menggabungkan tombol aksi dengan DataTables agar tombol di halaman ke-2, ke-3, dan seterusnya tetap merespons klik.
+
+### Langkah Live Coding
+
+#### 1. Tambahkan method `destroy` di `app/Http/Controllers/ProductController.php`
+
+```php
+public function destroy(Product $product)
+{
+    $sku = $product->sku;
+    $product->delete();
+
+    return redirect()->route('products.index')
+        ->with('success', "Produk {$sku} berhasil dihapus!");
+}
+```
+
+#### 2. Bungkus tombol Hapus dengan form `DELETE` di `resources/views/products/index.blade.php`
+
+```html
+<form
+    action="{{ route('products.destroy', $product->id) }}"
+    method="POST"
+    class="d-inline delete-form"
+>
+    @csrf @method('DELETE')
+    <button
+        type="button"
+        class="btn btn-sm btn-danger btn-delete"
+        data-name="{{ $product->name }}"
+        data-sku="{{ $product->sku }}"
+    >
+        Hapus
+    </button>
+</form>
+```
+
+#### 3. Tambahkan script konfirmasi SweetAlert2 di dalam tag `<script>` pada `index.blade.php`
+
+```javascript
+$(document).on("click", ".btn-delete", function () {
+    const form = $(this).closest(".delete-form");
+    const name = $(this).data("name");
+    const sku = $(this).data("sku");
+
+    Swal.fire({
+        title: "Hapus Produk?",
+        html: `Produk <b>${name}</b> (${sku}) akan dihapus dari katalog aktif.`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: "#d33",
+        cancelButtonColor: "#6c757d",
+        confirmButtonText: "Ya, Hapus!",
+        cancelButtonText: "Batal",
+    }).then((result) => {
+        if (result.isConfirmed) {
+            form.submit();
+        }
+    });
+});
+```
+
+---
+
+## Pengecekan Akhir di MySQL (phpMyAdmin / DBeaver)
+
+Setelah menghapus salah satu produk melalui aplikasi:
+
+1. Buka tabel `products` di database `crud_produk`.
+2. Perhatikan bahwa kolom `id` bertipe `char(36)` berisi string UUID acak.
+3. Baris produk yang baru saja dihapus **masih ada di dalam tabel**, namun kolom `deleted_at` kini terisi stempel waktu penghapusan sehingga tidak lagi ditampilkan di halaman utama.
