@@ -1,3 +1,47 @@
+## Daftar Materi & Insight Baru
+
+1. **Persiapan Awal:** Clone repository dari GitHub & setup environment Laravel + MySQL.
+2. **To-Do 1:** Upgrade Primary Key ke **UUID**, Auto-Generate **SKU** (_Stock Keeping Unit_), & **Soft Deletes**.
+3. **To-Do 2:** Upgrade tabel statis ke **DataTables** & notifikasi ke **SweetAlert2**.
+4. **To-Do 3:** Menghidupkan tombol **Edit** (_Resource Route_, _Route Model Binding_, & `@method('PUT')`).
+5. **To-Do 4:** Menghidupkan tombol **Hapus** (`@method('DELETE')` & konfirmasi interaktif **SweetAlert2**).
+
+##  Persiapan Awal: Clone & Setup Project dari GitHub
+Ikuti langkah-langkah berikut secara berurutan agar aplikasi awal (*As-Is*) berjalan di laptopmu sebelum sesi *live coding* dimulai:
+
+### 1. Clone Repository & Masuk ke Folder Project
+Buka terminal (PowerShell / Git Bash / Terminal VS Code) di folder tempat kamu biasa menyimpan proyek (misalnya `Documents` atau `htdocs`), lalu jalankan:
+
+```bash
+git clone https://github.com/arjunaber/crud-produk.git
+cd crud-produk
+```
+
+*(Opsional)* Buka folder proyek di VS Code langsung dari terminal:
+```bash
+code .
+```
+
+### 2. Install Dependency Laravel (`vendor`)
+Folder `vendor/` tidak ikut diunggah ke GitHub (diabaikan oleh `.gitignore`), sehingga kita wajib mengunduhnya lewat Composer:
+
+```bash
+composer install
+```
+
+### 3. Buat File `.env` & Generate Application Key
+File `.env` berisi konfigurasi rahasia lokal sehingga tidak tersedia di GitHub. Salin dari file contoh `.env.example`, lalu buat *encryption key* Laravel:
+
+```bash
+cp .env.example .env
+php artisan key:generate
+```
+*(Catatan: Jika menggunakan Windows CMD biasa dan perintah `cp` tidak dikenali, gunakan `copy .env.example .env`).*
+
+### 4. Konfigurasi Database MySQL
+1. Pastikan **Apache & MySQL** di **XAMPP / Laragon** sudah dalam kondisi **Start (Aktif)**.
+2. Buka file `.env` di VS Code, cari bagian `DB_CONNECTION`, lalu ubah dari `sqlite` menjadi konfigurasi `mysql` berikut (hapus tanda `#` jika masih dikomentari):
+
 Pastikan konfigurasi database di file `.env` sudah mengarah ke MySQL:
 
 ```env
