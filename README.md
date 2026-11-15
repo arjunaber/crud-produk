@@ -26,7 +26,7 @@ php artisan serve
 - **Auto-Generate SKU:** Menggunakan _Model Event_ (`creating`) agar kode produk dibuat otomatis di level Model (_Skinny Controller, Fat Model_).
 - **Soft Deletes:** Data yang dihapus tidak langsung hilang permanen dari MySQL, melainkan ditandai dengan _timestamp_ pada kolom `deleted_at` untuk kebutuhan audit.
 
-### Langkah Live Coding
+### Langkah Coding
 
 #### 1. Ubah struktur tabel di `database/migrations/xxxx_xx_xx_create_products_table.php`
 
@@ -141,7 +141,7 @@ php artisan migrate:fresh --seed
 - **DataTables:** Memberikan fitur _live search_, _sorting_ kolom, dan _pagination_ secara instan di sisi klien tanpa perlu menulis _query_ pencarian manual.
 - **SweetAlert2:** Menggantikan kotak dialog bawaan browser/alert statis menjadi _popup_ modern yang lebih responsif.
 
-### Langkah Live Coding (`resources/views/products/index.blade.php`)
+### Langkah Coding (`resources/views/products/index.blade.php`)
 
 #### 1. Tambahkan CSS DataTables di dalam tag `<head>`
 
@@ -195,7 +195,7 @@ php artisan migrate:fresh --seed
 - **Resource Routing & Implicit Route Model Binding:** Laravel otomatis mencocokkan parameter UUID pada URL (`/products/{product}/edit`) dengan data di MySQL tanpa perlu menulis `Product::findOrFail($id)`.
 - **HTTP Method Spoofing:** Tag `<form>` HTML standar hanya mendukung metode `GET` dan `POST`, sehingga Laravel menggunakan `@method('PUT')` untuk memetakan permintaan pembaruan data (_Update_).
 
-### Langkah Live Coding
+### Langkah Coding
 
 #### 1. Ubah `routes/web.php` menggunakan `Route::resource`
 
@@ -353,7 +353,7 @@ public function update(Request $request, Product $product)
 - **Mencegah Accidental Delete:** Menggunakan tombol `type="button"` agar form tidak langsung terkirim sebelum pengguna mengonfirmasi lewat modal SweetAlert2.
 - **Event Delegation (`$(document).on`):** Wajib digunakan saat menggabungkan tombol aksi dengan DataTables agar tombol di halaman ke-2, ke-3, dan seterusnya tetap merespons klik.
 
-### Langkah Live Coding
+### Langkah
 
 #### 1. Tambahkan method `destroy` di `app/Http/Controllers/ProductController.php`
 
